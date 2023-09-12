@@ -9,20 +9,46 @@ options(pillar.sigfig = 5)
 volume_est <- read_csv("~/student_documents/UBC/Research/Malawi/data/larva size class measurements/volume_est.csv")
 print(volume_est)
 
+headcap <- read_csv("~/student_documents/UBC/Research/Malawi/data/larva size class measurements/head_cap.csv") %>%
+  select(-Area, -Angle) %>%
+  rename(indvd = ...1) %>%
+  rename(head_cap = Length)
+print(headcap)
+
 # above is long format, calcs are easier in wide
 # correct for pH (bring down to approx pH 6 by reducing length dimensions 
 # by (23.1%(increase in pH7) - 1.3% (increase from pH5 to in vivo size)) = 21.8% (from glam shot tube expt))
 volume_est.wide <- volume_est %>%
   pivot_wider(names_from = measure, values_from = value) %>%
-  mutate(length_pH_vivo_corr = length * 0.782) # 21.8% reduction for vivo size
+  mutate(length_pH_vivo_corr = length * 0.782) %>% # 21.8% reduction for vivo size
+  mutate(instar = NA) #%>%
+  #mutate(head_cap = )
+  
+
+volume_est.wide <- inner_join(volume_est.wide, headcap, by = c("indvd"))
+
+volume_est.wide <- volume_est.wide %>%
+  mutate(instar = replace(instar, 
+                          head_cap > 0.88 & 
+                            head_cap < 1.1, 
+                          4)) %>%
+  mutate(instar = replace(instar, 
+                          head_cap > 0.58 & 
+                            head_cap < 0.72, 
+                          3)) %>%
+  mutate(instar = replace(instar, 
+                          head_cap > 0.3 & 
+                            head_cap < 0.5, 
+                          2))
 
 print(volume_est.wide, n= 20)
+#rm(volume_est.wide)
 
 
 ## volume calculation is different for tips vs. midsecs, so separating the data frames
 #mid-section measures do still need tip values from other df (but at different row locations than the midsec we're calculating for in the main df)
 
-# tips data frame
+# tips data frame (this one first because midsec.df will use tip base values)
 tip.df <- volume_est.wide %>%
   filter(region == "tip1" | region == "tip2") %>%
   group_by(indvd, sac, region) %>%
@@ -39,10 +65,11 @@ midsec.df <- volume_est.wide %>%
                             select = "base")) %>% 
   mutate(tip2 = subset(tip.df, # tip2 base for mean hight in cylinder volume calc
                             region == "tip2", 
-                            select = "base")) 
+                            select = "base"))
+
 # brute force rename (above mutates add "$base" for some reason, and this fucks up dplyr renaming/ other stuff) 
-midsec.df[ , 7] <- midsec.df$tip1 
-midsec.df[ , 8] <- midsec.df$tip2
+midsec.df[ , ncol(midsec.df) - 1] <- midsec.df$tip1 # rename second last column
+midsec.df[ , ncol(midsec.df)] <- midsec.df$tip2 # rename last column
 
 midsec.df <- midsec.df %>%
   group_by(indvd, sac) %>%
@@ -62,9 +89,10 @@ vol_df <- tip.df %>%
   group_by(indvd, sac) %>%
   mutate(sum_tip_vol = volume[1] + volume[2]) %>%
   mutate(sum_tip_vol_corr = volume_corr[1] + volume_corr[2]) %>%
-  select(-volume, -volume_corr, -region) %>%
+  select(-volume, -volume_corr, -region, -head_cap) %>%
   unique()
 
+print(vol_df)
 # bring in the mid section info
 vol_df$midsec_vol <- midsec.df$volume
 vol_df$midsec_vol_corr <- midsec.df$volume_corr
@@ -84,7 +112,7 @@ write_csv(vol_df,
 # a data frame and spreadsheet with total larva air volume
 total_air <- vol_df %>%
   group_by(indvd) %>%
-  select(indvd, sac_volume_uL, sac_volume_uL_corr) %>%
+  select(indvd, instar, sac_volume_uL, sac_volume_uL_corr) %>%
   mutate(vol_total = sum(sac_volume_uL[1:4])) %>%
   mutate(vol_total_corr = sum(sac_volume_uL_corr[1:4])) %>%
   select(-sac_volume_uL, -sac_volume_uL_corr) %>%
@@ -94,27 +122,6 @@ print(total_air)
 
 write_csv(total_air,
           "~/student_documents/UBC/Research/Malawi/data/larva size class measurements/total_air.csv")
-
-
-##################    asigning instar based on head_cap_len   #################
-
-crush_raw <- crush_raw %>% 
-  mutate(instar = replace(instar, 
-                          head_cap_len > 0.88 & 
-                            head_cap_len < 1.1, 
-                          4)) %>%
-  mutate(instar = replace(instar, 
-                          head_cap_len > 0.58 & 
-                            head_cap_len < 0.72, 
-                          3)) %>%
-  mutate(instar = replace(instar, 
-                          head_cap_len > 0.3 & 
-                            head_cap_len < 0.5, 
-                          2)) %>%
-  mutate(species = as_factor(species))
-
-print(crush_raw)
-
 
 
 
